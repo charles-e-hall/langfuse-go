@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"sync"
 )
 
 type Sender interface {
@@ -11,6 +12,8 @@ type Sender interface {
 	Start() error
 	Worker() error
 	Flush() error
+	Add(t Trace) error
+	ReadAllJSON() string
 }
 
 type DefaultSender struct {
@@ -18,6 +21,8 @@ type DefaultSender struct {
 	Started         bool
 	MaxPendingItems int
 	Url             string
+	Credential      string
+	lock            sync.Mutex
 }
 
 func (s *DefaultSender) SendAll() error {
@@ -28,6 +33,9 @@ func (s *DefaultSender) SendAll() error {
 	}
 
 	req.Header.Add("Content-Type", "application/json")
+
+	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", s.Credential))
+
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -65,12 +73,24 @@ func (s *DefaultSender) Flush() error {
 	return nil
 }
 
-func NewDefaultSender(url string) DefaultSender {
+func (s *DefaultSender) Add(t Trace) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.SendQueue = append(s.SendQueue, t)
+	return nil
+}
+
+func (s *DefaultSender) ReadAllJSON() string {
+	return ""
+}
+
+func NewDefaultSender(url string, credential string) *DefaultSender {
 	s := DefaultSender{
 		Url:             url,
 		MaxPendingItems: 5,
+		Credential:      credential,
 	}
 	s.SendQueue = make([]Trace, s.MaxPendingItems)
 	s.Started = false
-	return s
+	return &s
 }
